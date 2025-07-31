@@ -1,8 +1,7 @@
-.Rproj.user
+.RData
 .Rhistory
-.RData
-.Ruserdata
-.RData
-.Rproj.user/
-.DS_Store
-*.csv
+spBSS.Rproj
+data/
+/data
+./data
+.Rproj.user
