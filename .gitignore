@@ -1,4 +1,5 @@
 .RData
+.RData*
 .Rhistory
 spBSS.Rproj
 data/
