@@ -5,3 +5,8 @@ data/
 /data
 ./data
 .Rproj.user
+spBSS.Rproj
+results/
+/results
+./results
+Rplot.pdf

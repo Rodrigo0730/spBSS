@@ -3,11 +3,11 @@
 #SBATCH --account=project_2012081
 #SBATCH --output=output_%j.txt
 #SBATCH --error=errors_%j.txt
-#SBATCH --partition=test
-#SBATCH --time=00:15:00
-#SBATCH --ntasks=80
-#SBATCH --nodes=2
-#SBATCH --mem-per-cpu=4600
+#SBATCH --partition=hugemem
+#SBATCH --time=1-00:00:00
+#SBATCH --ntasks=40
+#SBATCH --nodes=1
+#SBATCH --mem-per-cpu=30000
 
 # Load r-env
 module load r-env

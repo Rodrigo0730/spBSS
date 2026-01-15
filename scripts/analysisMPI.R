@@ -3,7 +3,7 @@
 # Spatial BSS MPI Data Analysis Framework
 # -----------------------------------------------------------------------------
 #
-# In slurm choose the setting to run and values of the parameter d. Note that
+# In Slurm choose the setting to run and values of the parameter d. Note that
 # the total number of data points is d^2. Add the following after module loads:
 #
 # SETTING="setting_1/2/3/4"
@@ -31,17 +31,17 @@ parse_arg <- function(name, default = NULL) {
   sub(paste0("^--", name, "="), "", val)
 }
 
-setting <- parse_arg("setting", default = "setting_3")
-ds_input <- parse_arg("ds", default = "20")
+setting <- parse_arg("setting", default = "irregular_1")
+ds_input <- parse_arg("ds", default = "5")
 ds <- as.integer(strsplit(ds_input, ",")[[1]])
 
 message("Setting: ", setting)
 message("Values of parameter d: ", paste(ds, collapse = ", "))
-master <- c("doRNG", "Matrix", "doMPI", "spdep", "dplyr")
+master <- c("doParallel", "doRNG", "Matrix", "doMPI", "spdep", "dplyr", "SpatialBSS")
 workers <- c("SpatialBSS","JADE","spGARCH","spdep","sp",
              "dplyr","sf","moments", "Matrix")
 #in puhti
-.libPaths(c("/projappl/project_2012081/project_rpackages_440", .libPaths()))
+#.libPaths(c("/projappl/project_2012081/project_rpackages_440", .libPaths()))
 
 #load packages for master script
 for (pkg in master) {
@@ -51,27 +51,41 @@ for (pkg in master) {
 }
 
 #inherit functions from analysis.R
-source("/scratch/project_2012081/spBSS/analysis.R")
+#source("/scratch/project_2012081/spBSS/R/analysis.R")
+source("~/Desktop/Research/spBSS/R/analysis.R")
+
 
 
 message("[", Sys.time(), "] Starting MPI cluster...")
 
-cl <- startMPIcluster()
-registerDoMPI(cl)
+cl <- makeCluster(6)
+registerDoParallel(cl)
 registerDoRNG(seed=123)
 
 message("[", Sys.time(), "] Cluster started and RNG registered.")
 
 n_reps <- 2000
+ds <- c(5, 10, 20, 40, 60, 80)
 
 for (d in ds) {
   
+  all_res <- list()
+  
   message("[", Sys.time(), "] Starting loop for d = ", d, ".")
   
-  filename <- sprintf("/scratch/project_2012081/spBSS/data/%s/data_%d.rds", setting, d)
+  # in Puhti supercomputer
+  # filename <- sprintf("/scratch/project_2012081/spBSS/data/%s/data_%d.rds", setting, d)
+  
+  # locally
+  filename <- sprintf("~/Desktop/Research/spBSS/data/%s/data_%d.rds", setting, d)
+  
   data <- readRDS(filename)
   
   field <- gen_field(d)
+  # 
+  # field <- data$coords
+  # data <- data$data
+
   bd <- c(0, 1, 1, 2, 2, 3)
   rings <- gen_rings(field, bd)
   kernels_sparse <- rings$kernels_sparse
@@ -79,57 +93,41 @@ for (d in ds) {
   
   message("[", Sys.time(), "] Starting dorng...")
   
-  results_d <- foreach(
-    r = 1:n_reps,
-    .packages = requirements,
-    .combine  = rbind
-  ) %dorng% {
+  df <- foreach(r = 1:n_reps, .combine = rbind, .packages = workers) %dopar% {
     sources <- data[[r]]
     
-    #check seed
+    spFOBI_md <- spFOBI(field, sources, kernels_sparse)$md
+    spJADE_md <- spJADE(field, sources, kernels, kernels_sparse)$md
     
-    m_fspice <- fspice(field, sources, kernels_sparse, seed = r)$md
-    m_jspice <- jspice(field, sources, kernels, kernels_sparse, seed = r)$md
-    tmp      <- lcovbss_fobi_jade(sources, kernels, seed = r)
-    m_sbss   <- tmp$md_sbss
-    m_fobi   <- tmp$md_fobi
-    m_jade   <- tmp$md_jade
-    
+    res <- lcovbss_fobi_jade(sources, kernels)
     data.frame(
-      rep    = r,
-      fspice = m_fspice,
-      jspice = m_jspice,
-      sbss   = m_sbss,
-      fobi   = m_fobi,
-      jade   = m_jade,
+      spFOBI = spFOBI_md,
+      spJADE = spJADE_md,
+      SBSS = res$md_sbss,
+      FOBI = res$md_fobi,
+      JADE = res$md_jade,
       stringsAsFactors = FALSE
     )
   }
   
-  df_long <- reshape(
-    results_d,
-    varying   = list(names(results_d)[2:6]),
-    v.names   = "md",
-    timevar   = "model",
-    times     = names(results_d)[2:6],
-    direction = "long"
-  )
-  df_long$d <- d
-  rownames(df_long) <- NULL
+  all_res[[as.character(d)]] <- df
   
-  output_file <- sprintf("/scratch/project_2012081/spBSS/results/raw/%s/res_%d.rds", setting, d)
-  saveRDS(df_long, output_file)
+  message("[", Sys.time(), "] Saving results to /results/raw...")
+  
+  output_file <- sprintf("~/Desktop/Research/spBSS/results/raw/%s/res_%d.rds", setting, d)
+  saveRDS(do.call(rbind, all_res), output_file)
+  
+  message("[", Sys.time(), "] Saved results.")
   
   message("[", Sys.time(), "] Finished d = ", d)
   
-  rm(results_d, df_long)
+  rm(df, all_res)
   gc()
 }
 
 message("[", Sys.time(), "] Closing cluster...")
 
-closeCluster(cl)
-mpi.quit()
+stopCluster(cl)
 
 message("[", Sys.time(), "] Closed sucesfully.")
 

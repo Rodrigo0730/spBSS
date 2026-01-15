@@ -4,8 +4,8 @@
 # -----------------------------------------------------------------------------
 #
 # Implemented Methods:
-#   - fSPICE: Fobi-based Spatial Independent Component Estimation
-#   - jSPICE: Jade-based Spatial Independent Component Estimation
+#   - spFOBI: Fobi-based Spatial Independent Component Estimation
+#   - spJADE: Jade-based Spatial Independent Component Estimation
 #   - SBSS: Spatial BSS based on local covariance matrices.
 #   - FOBI: Fourth Order Blind Identification.
 #   - JADE: Joint Approximate Diagonalization of Eigen-matrices.
@@ -54,7 +54,6 @@ compute_bkl <- function(k, l, kmat, Y) {
   vkl <- Y[, k] * Y[, l]
   w <- kmat %*% vkl
   return(as.matrix(crossprod(Y * w, Y)/n))
-  # return(as.matrix(crossprod(Y * w, Y)/sum(kmat)))
 }
 
 compute_ckl <- function(k, l, kmat, lcov, Y) {
@@ -78,9 +77,9 @@ compute_ckl <- function(k, l, kmat, lcov, Y) {
   return(as.matrix(Ckl))
 }
 
-fspice <- function(field, sources, kernels_sparse, eps= 1e-06, maxiter=100, seed=NULL) {
+spFOBI <- function(field, sources, kernels_sparse, eps= 1e-06, maxiter=100, seed=NULL) {
   
-  # Main function to apply fSpice to simulated sources. The function first creates
+  # Main function to apply spFOBI to simulated sources. The function first creates
   # a mixing matrix A and computes the mixed sources as X = sources * A^T. Then, X is
   # whitened using whiten_data() and proceeds to compute the B_f matrices for joint
   # diagonalization utilizing JADE::frjd. It returns the array of matrices which underwent
@@ -90,7 +89,7 @@ fspice <- function(field, sources, kernels_sparse, eps= 1e-06, maxiter=100, seed
   # Here the kernels matrices must be sparse, generated, for example, using gen_rings()
   # from the datagen.R helper file.
   #
-  # To-do: compare performance with weighted diagonalization.
+  # Possible future implementation: compare performance with weighted diagonalization.
   
   if (!is.numeric(field))
     stop("invalid field")
@@ -120,6 +119,7 @@ fspice <- function(field, sources, kernels_sparse, eps= 1e-06, maxiter=100, seed
     B_array[, , i] <- B_sum
   }
   
+  # Weighted Diagonalization could be implemented as follows
   # w <- c(1, 1, 1, 1)
   # B_array <- sweep(B_array, 3, w, `*`)
   
@@ -145,9 +145,9 @@ fspice <- function(field, sources, kernels_sparse, eps= 1e-06, maxiter=100, seed
   
 }
 
-jspice <- function(field, sources, kernels, kernels_sparse, eps= 1e-06, maxiter=100, seed=NULL) {
+spJADE <- function(field, sources, kernels, kernels_sparse, eps= 1e-06, maxiter=100, seed=NULL) {
   
-  # Main function to apply jSpice to simulated sources. The function first creates
+  # Main function to apply spJADE to simulated sources. The function first creates
   # a mixing matrix A and computes the mixed sources as X = sources * A^T. Then, X is
   # whitened using whiten_data() and computes the Local Covariance matrices using
   # SpatialBSS::local_covariance_matrix. Moreover, computes the C_f^{kl} matrices for 
@@ -159,8 +159,8 @@ jspice <- function(field, sources, kernels, kernels_sparse, eps= 1e-06, maxiter=
   # from the datagen.R helper file. But it is also needed to pass the full matrices as
   # SpatialBSS::local_covariance_matrix does not accept sparse matrices.
   #
-  # To-do: compare performance with weighted diagonalization. Write own local_covariance_matrix
-  # function to take sparse matrices.
+  # Possible future implementations: compare performance with weighted diagonalization. 
+  # Write own local_covariance_matrix function to take sparse matrices.
   
   if (!is.numeric(field))
     stop("invalid field")
@@ -221,7 +221,7 @@ jspice <- function(field, sources, kernels, kernels_sparse, eps= 1e-06, maxiter=
 
 lcovbss_fobi_jade <- function(sources, kernels, seed=NULL) {
   
-  # This function performs the same procedure as for fSpice and jSpice but for 
+  # This function performs the same procedure as for spFOBI and spJADE but for 
   # sbss (SpatialBSS::sbss), classic FOBI and JADE (JADE::FOBI; JADE::JADE). Returns
   # the Minimum Distance Index values (JADE::MD) of the estimated unmixing matrix and 
   # mixing matrix A.
@@ -250,7 +250,10 @@ lcovbss_fobi_jade <- function(sources, kernels, seed=NULL) {
   )
   
 
-  md_sbss <- if (!is.matrix(W_est_sbss)) NA else MD(W_est_sbss, A)
+  md_sbss <- tryCatch(
+    MD(W_est_sbss, A),
+    error = function(e) NA
+  )
   md_fobi <- if (!is.matrix(W_est_fobi)) NA else MD(W_est_fobi, A)
   md_jade <- if (!is.matrix(W_est_jade)) NA else MD(W_est_jade, A)
   
@@ -263,11 +266,11 @@ lcovbss_fobi_jade <- function(sources, kernels, seed=NULL) {
 }
 
 #test function to evaluate the different methods
-test <- function(ds, n_rep = 1000, load=FALSE) {
+test <- function(ds, n_rep = 1, load=FALSE) {
   
   if (load==TRUE) {
-    requirements <- c("SpatialBSS","JADE","spGARCH","spdep","sp","dplyr","sf",
-                      "moments", "Matrix", "FNN")
+    requirements <- c("doRNG","SpatialBSS","JADE","spGARCH","spdep","sp","dplyr","sf",
+                      "moments", "Matrix")
     for (pkg in requirements) {
       if (!require(pkg, character.only = TRUE)) {
         library(pkg, character.only = TRUE)
@@ -275,60 +278,43 @@ test <- function(ds, n_rep = 1000, load=FALSE) {
     }
   }
   
+
+  
   all_res <- list()
   
-  for (d in ds) {
-    filename <- paste0("data/setting_3/data_", d, ".rds")
-    data <- readRDS(filename)
-    field <- gen_field(d)
+  filename <- paste0("~/Desktop/Research/spBSS/data/setting_3/data_10.rds")
+  file <- readRDS(filename)
+  
+  data <- file$data
+  field <- file$coords
+  
+  bd <- c(0, 1, 1, 2, 2, 3)
+  rings <- gen_rings(field, bd)
+  
+  kernels <- rings$kernels
+  kernels_sparse <- rings$kernels_sparse
+  
+  for (r in 1:2000) {
+  
+    sources <- data[[r]]
+  
+    spFOBI_md <- spFOBI(field, sources, kernels_sparse)$md
+    spJADE_md <- spJADE(field, sources, kernels, kernels_sparse)$md
     
-    data <- lapply(seq_len(2000), function(i) {
-      idx <- ((i-1)*3 + 1):(i*3)             # indices for this group of 3
-      mats <- data[idx]                  # list of three 400‑vectors
-      do.call(cbind, mats)                  # bind into a 400×3 matrix
-    })
-    
-
-    bd <- c(0, 1, 1, 2, 2, 3)
-    rings <- gen_rings(field, bd)
-    
-    kernels <- rings$kernels
-    kernels_sparse <- rings$kernels_sparse
-    
-    # kernels <- list(diag(1, 1600, 1600)) #f_0
-    # kernels_sparse <- list(Diagonal(1600, x=1))
-
-    df <- data.frame(
-      fspice = numeric(n_rep),
-      jspice = numeric(n_rep),
-      sbss = numeric(n_rep),
-      fobi = numeric(n_rep),
-      jade = numeric(n_rep),
-      stringsAsFactors = FALSE
-    )
-    
-    for (r in 1:n_rep) {
-      sources <- data[[r]]
-      df$fspice[r] <- fspice(field, sources, kernels_sparse, seed = r)$md
-      df$jspice[r] <- jspice(field, sources, kernels, kernels_sparse, seed = r)$md
-
-      
-      res <- lcovbss_fobi_jade(sources, kernels, seed = r)
-      df$sbss[r] <- res$md_sbss
-      df$fobi[r] <- res$md_fobi
-      df$jade[r] <- res$md_jade
-    }
-
-    all_res[[as.character(d)]] <- df
+    res <- lcovbss_fobi_jade(sources, kernels)
   }
-  do.call(rbind, all_res)
+  
+  data.frame(
+    spFOBI = spFOBI_md,
+    spJADE = spJADE_md,
+    sbss = res$md_sbss,
+    fobi = res$md_fobi,
+    jade = res$md_jade,
+    stringsAsFactors = FALSE
+  )
 }
 
-# res <- test(ds=c(20), n_rep=200, load=FALSE)
-# print(colMeans(res))
 
-# Some quick testing shows that one can choose the weights such that the models perform
-# better, but the difference is minimal. -0.01 or -0.02 observed.
 
 
 

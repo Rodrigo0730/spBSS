@@ -15,13 +15,9 @@
 #   - gen_nb: Generates rook/queen adjacency-based neighbors.
 #   - nb2W: Converts neighbors lists to sparse weights matrices.
 #   - nth_W: Constructs k-th order spatial weight matrices.
-#   - gen_sources_setting_3/4: Simulates spARCH/spGARCH processes with 
-#     specified spatial dependencies.
+#   - gen_sources_setting_n: simulate sources
 # 
-# To-do:
-# Write functions to generate sources for settings 1 and 2 once the results
-# of settings 3 and 4 are done. Might be useful to incorporate neighbor 
-# based rings instead of distanced based like gen_rings() does.
+
 
 gen_field <- function(d) {
   
@@ -40,7 +36,7 @@ gen_rings <- function(field, bandwidths) {
   # Generates a series of ring-shaped spatial kernel matrices (both dense and 
   # sparse formats) for a given field and a set of bandwidths. The function 
   # computes ring kernels using spatial_kernel_matrix, converts them to sparse 
-  # dgCMatrix format, and prepends an identity matrix to represent the kernel f0  
+  # dgCMatrix format, and appends an identity matrix to represent the kernel f0  
   # (no spatial information). Returns a list containing both the sparse 
   # and dense versions of the kernels.
   
@@ -88,24 +84,92 @@ nth_W <- function(nb, k = 2, style = "W") {
   Wk <- nb2W(nb_k, style = style)
   return(Wk)
 }
-gen_sources_setting_1 <- function() {
-  # Check notes for specification of the settings and required libraries.
+
+sim_SAR <- function(coords, W, rho, alpha = 0, error = "normal", df = 8, seed = NULL) {
+  
+  # Simulates data from a spatial Autoregressive model as described
+  # in the paper. 
+  
+  if (!is.null(seed)) set.seed(seed)
+  n <- nrow(coords)
+  I <- diag(n)
+  eps <- if (error == "normal") rnorm(n) else rt(n, df = df)
+  mu <- rep(alpha, n)
+  X <- solve(I - rho * as.matrix(W), mu + eps)
+  as.numeric(X)
 }
 
-gen_sources_setting_2 <- function() {
-  # Same as above but with student-t distributed innovations.
+sim_CAR <- function(coords, W, rho, alpha = 0, seed = NULL) {
+  
+  # Simulates data from a conditional Autoregressive model as described in
+  # the paper.
+  
+  if (!is.null(seed)) set.seed(seed)
+  n <- nrow(coords)
+  A <- diag(n) - rho * as.matrix(W)
+  Sigma <- solve(A)
+  mu <- rep(alpha, n)
+  X <- MASS::mvrnorm(1, mu = mu, Sigma = Sigma)
+  as.numeric(X)
+}
+
+sim_SEM <- function(coords, W, rho = 0.5, alpha = 0, error = "normal", df = 7, seed = NULL) {
+  
+  # Simulates data from a spatial Error model as described in 
+  # the paper.
+  
+  if (!is.null(seed)) set.seed(seed)
+  n <- nrow(coords)
+  I <- diag(n)
+  eps <- if (error == "normal") rnorm(n) else rt(n, df=df)
+  u <- as.numeric(solve(I - rho * as.matrix(W), eps))
+  X <- rep(alpha, n) + u
+  as.numeric(X)
+}
+
+gen_sources_setting_1 <- function(d, W1, W2, W3, seed = NULL) {
+  
+  # helper function to generate the sources for the third setting
+  # Rho is the spatial dependence parameter and alpha represents the 
+  # baseline volatility or unconditional variance. Innovations are Gaussian.
+
+  if (!is.null(seed)) set.seed(seed)
+  
+  coords <- gen_field(d)
+  
+  sar1 <- sim_SAR(coords, W=0.9*W1, rho = 1, alpha = 0.5)
+  car <- sim_CAR(coords, W=0.3*W1 + 0.4*W2, rho=1, alpha=0.5)
+  sar2 <- sim_SAR(coords, W=0.8*W1, rho=1, alpha = 0.5)
+  sem <- sim_SEM(coords, W= 0.2*W1 + 0.2*W2 + 0.3*W3, rho = 1, alpha=1)
+  
+
+  return(cbind(sar1, car, sem, sar2))
+}
+
+gen_sources_setting_2 <- function(d, W1, W2, W3, seed = NULL) {
+  
+  # helper function to generate the sources for the third setting
+  # Rho is the spatial dependence parameter and alpha represents the 
+  # baseline volatility or unconditional variance. Innovations are Student-t
+  # expect for one source.
+  
+  if (!is.null(seed)) set.seed(seed)
+  
+  coords <- gen_field(d)
+  
+  sar1 <- sim_SAR(coords, W=0.9*W1, rho = 1, alpha = 0.5, error="t", df=7)
+  car <- sim_CAR(coords, W=0.3*W1 + 0.4*W2, rho=1, alpha=0.5)
+  sar2 <- sim_SAR(coords, W=0.8*W1, rho=1, alpha = 0.5, error="t", df=8)
+  sem <- sim_SEM(coords, W= 0.2*W1 + 0.2*W2 + 0.3*W3, rho = 1, alpha=1, error="t", df=8)
+  
+  
+  return(cbind(sar1, car, sem, sar2))
 }
 
 gen_sources_setting_3 <- function(d, W1, W2, W3, seed = NULL) {
   
   # helper function to generate the sources for the third setting
-  # the sources are as following:
-    # 1: log-spARCH(1) with rho = 0.9 and alpha = 0.5
-    # 2: log-spARCH(1) with rho =0.7 and alpha = 0.5
-    # 3: log-spGARCH(1, 2) with rho = 0.4, lambda = 0.9 and alpha = 1
-    # 4: log-spGARCH(3, 1) with rho = 0.8, lambda = 0.5 and alpha = 1
-    # 5: log-spGARCH(2, 3) with rho=0.4, lambda = 0.3 and alpha = 0.5
-  # all with Gaussian innovations. Moreover, rho and lambda are the
+  # Rho and lambda are the
   # spatial dependence parameters for W1 (ARCH component) and
   # W2 (GARCH component) respectively, and alpha represents the 
   # baseline volatility or unconditional variance.
@@ -113,87 +177,64 @@ gen_sources_setting_3 <- function(d, W1, W2, W3, seed = NULL) {
   if (!is.null(seed)) set.seed(seed)
   
   params <- list(
-    list(rho = 0.9, lambda = 0.0, alpha = 0.5, W1 = W1, W2 = W1),
-    list(rho = 0.7, lambda = 0.0, alpha = 0.5, W1 = W2, W2 = W1),
-    list(rho = 0.4, lambda = 0.9, alpha = 1, W1 = W1, W2 = W2),
-    list(rho = 0.8, lambda = 0.5, alpha = 1, W1 = W3, W2 = W1),
-    list(rho = 0.4, lambda = 0.3, alpha = 0.5, W1 = W2, W2 = W3)
+    list(rho = 1, lambda = 0.0, alpha = 0.5, W1 = 0.9*W1, W2 = W1),
+    list(rho = 1, lambda = 0.0, alpha = 0.5, W1 = 0.8*W1, W2 = W1),
+    list(rho = 1, lambda = 1, alpha = 1, W1 = 0.4*W1 + 0.3*W2 + 0.3*W3, W2 = 0.5*W1),
+    list(rho = 1, lambda = 1, alpha = 0.5, W1 = 0.2*W1 + 0.7*W2, W2 = 0.2*W1 + 0.2*W2 + 0.4*W3)
   )
   
   sources_list <- lapply(seq_along(params), function(i) {
     par <- params[[i]]
-    if (i <= 2L) {
-      sim.spARCH(
-        n       = d^2,
-        rho     = par$rho,
-        alpha   = par$alpha,
-        W       = par$W1,
-        type    = "log-spARCH",
-        control = list(silent=TRUE)
-      )
-    } else {
-      sim.spGARCH(
-        n       = d^2,
-        rho     = par$rho,
-        alpha   = par$alpha,
-        lambda  = par$lambda,
-        W1      = par$W1,
-        W2      = par$W2,
-        type    = "log-spGARCH",
-      )
-    }
+    sim.spGARCH(
+      n       = d^2,
+      rho     = par$rho,
+      alpha   = par$alpha,
+      lambda  = par$lambda,
+      W1      = par$W1,
+      W2      = par$W2,
+      type    = "log-spGARCH",
+    )
+
   })
   
-  return(sources_list)
+  return(do.call(cbind, sources_list))
 }
 
 gen_sources_setting_4 <- function(d, W1, W2, W3, seed = NULL) {
-  if (!is.null(seed)) set.seed(seed)
-  
-  # This function uses a modified version library spGARCH >2.3.0.
   
   # helper function to generate the sources for the fourth setting
-  # same sources as setting 3 but in sources 1, 3, 4, 5 the innovations
-  # now follow a student-t distribution. The second source still has
-  # Gaussian innovations.
+  # Rho and lambda are the
+  # spatial dependence parameters for W1 (ARCH component) and
+  # W2 (GARCH component) respectively, and alpha represents the 
+  # baseline volatility or unconditional variance. Innovations are
+  # Student-t expect for one source.
   
-  # to-do: make sure the student-t distributions are applied and 
-  # modify the code in the spGARCH package to handle the change in
-  # innovations properly.
+  if (!is.null(seed)) set.seed(seed)
   
   params <- list(
-    list(rho = 0.9, lambda = 0.0, alpha = 0.5, W1 = W1, W2 = W1),
-    list(rho = 0.7, lambda = 0.0, alpha = 0.5, W1 = W1, W2 = W1),
-    list(rho = 0.4, lambda = 0.9, alpha = 1, W1 = W1, W2 = W2),
-    list(rho = 0.8, lambda = 0.5, alpha = 1, W1 = W3, W2 = W1),
-    list(rho = 0.4, lambda = 0.3, alpha = 0.5, W1 = W2, W2 = W3)
+    list(rho = 1, lambda = 0.0, alpha = 0.5, W1 = 0.9*W1, W2 = W1, df=7),
+    list(rho = 1, lambda = 0.0, alpha = 0.5, W1 = 0.8*W1, W2 = W1, df=7),
+    list(rho = 1, lambda = 1, alpha = 1, W1 = 0.4*W1 + 0.3*W2 + 0.3*W3, W2 = 0.5*W1, df=8),
+    list(rho = 1, lambda = 1, alpha = 0.5, W1 = 0.2*W1 + 0.7*W2, W2 = 0.2*W1 + 0.2*W2 + 0.4*W3, df=8)
   )
   
   sources_list <- lapply(seq_along(params), function(i) {
     par <- params[[i]]
-    if (i <= 2L) {
-      sim.spARCH(
-        n       = d^2,
-        rho     = par$rho,
-        alpha   = par$alpha,
-        W       = par$W1,
-        type    = "log-spARCH",
-        control = list(silent=TRUE)
-      )
-    } else {
-      sim.spGARCH(
-        n       = d^2,
-        rho     = par$rho,
-        alpha   = par$alpha,
-        lambda  = par$lambda,
-        W1      = par$W1,
-        W2      = par$W2,
-        type    = "log-spGARCH",
-      )
-    }
+    sim.spGARCH(
+      n       = d^2,
+      rho     = par$rho,
+      alpha   = par$alpha,
+      lambda  = par$lambda,
+      W1      = par$W1,
+      W2      = par$W2,
+      type    = "log-spGARCH",
+      error   = "student_t",
+      df      = par$df,
+    )
+    
   })
   
-  return(sources_list)
+  return(do.call(cbind, sources_list))
 }
 
 

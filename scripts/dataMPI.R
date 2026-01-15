@@ -3,7 +3,7 @@
 # Spatial BSS MPI Data Generation Framework
 # -----------------------------------------------------------------------------
 #
-# In slurm choose the setting to run and values of the parameter d. Note that
+# In Slurm choose the setting to run and values of the parameter d. Note that
 # the total number of data points is d^2. Add the following after module loads:
 #
 # SETTING="setting_1/2/3/4"
@@ -31,18 +31,18 @@ parse_arg <- function(name, default = NULL) {
   sub(paste0("^--", name, "="), "", val)
 }
 
-setting <- parse_arg("setting", default = "setting_3")
-ds_input <- parse_arg("ds", default = "20")
+setting <- parse_arg("setting", default = "setting_1")
+ds_input <- parse_arg("ds", default = "5")
 ds <- as.integer(strsplit(ds_input, ",")[[1]])
 
 message("Setting: ", setting)
 message("Values of parameter d: ", paste(ds, collapse = ", "))
 
-master <- c("doRNG", "Matrix", "doMPI", "spdep")
+master <- c("doRNG", "Matrix", "doMPI", "spdep", "doParallel", "SpatialBSS")
 workers <- c("SpatialBSS","JADE","spGARCH","spdep","sp",
              "dplyr","sf","moments", "Matrix")
 
-.libPaths(c("/projappl/project_2012081/project_rpackages_440", .libPaths()))
+#.libPaths(c("/projappl/project_2012081/project_rpackages_440", .libPaths()))
 
 #load packages for master script
 for (pkg in master) {
@@ -52,13 +52,13 @@ for (pkg in master) {
 }
 
 #load helper functions
-source("/scratch/project_2012081/spBSS/R/datagen.R")
+source("~/Desktop/Research/spBSS/R/datagen.R")
 
 message("[", Sys.time(), "] Starting MPI cluster…")
 
 #start MPI cluster
-cl <- startMPIcluster()
-registerDoMPI(cl)
+cl <- makeCluster(6)
+registerDoParallel(cl)
 
 registerDoRNG(seed=123)
 
@@ -72,12 +72,9 @@ for (d in ds) {
   
   coords <- gen_field(d)
   nb <- gen_nb(d, type = "rook")
-  
   W1 <- nb2W(nb, style = "W")  
   W2 <- nth_W(nb, k = 2)
   W3 <- nth_W(nb, k = 3)
-
-  message("[", Sys.time(), "] Starting foreach for ", n_reps, " reps…")
   
   gen_sources_fun <- switch(setting,
                             setting_1 = gen_sources_setting_1,
@@ -87,18 +84,20 @@ for (d in ds) {
                             stop("Unknown setting: ", setting)
   )
   
+  message("[", Sys.time(), "] Starting foreach for ", n_reps, " reps…")
+  
+
   results_d <- foreach(
     i = 1:n_reps,
     .combine = "c",
     .packages = workers
-  ) %dorng% {
-    sources <- gen_sources_fun(d, W1, W2, W3)
-    list(sources)
+  ) %dopar% {
+    list(gen_sources_fun(d, W1, W2, W3))
   }
-  
+
   message("[", Sys.time(), "] Saving results to data_", d, ".rds …")
   
-  save_filename <- sprintf("/scratch/project_2012081/spBSS/data/%s/data_%d.rds", setting, d)
+  save_filename <- sprintf("~/Desktop/Research/spBSS/data/%s/data_%d.rds", setting, d)
   
   saveRDS(results_d, file = save_filename, compress = "gzip")
   
@@ -111,9 +110,6 @@ for (d in ds) {
 
 
 message("[", Sys.time(), "] About to closeCluster(cl)…")
-closeCluster(cl)
+stopCluster(cl)
 message("[", Sys.time(), "] closeCluster() returned.")
 
-message("[", Sys.time(), "] About to call mpi.finalize()…")
-mpi.quit()
-message("[", Sys.time(), "] mpi.finalize() returned. Script should exit now.")
