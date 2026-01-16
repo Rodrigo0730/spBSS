@@ -9,7 +9,7 @@ All the code was written in R and requires the packages found in requirements.tx
 * R: contains the helper R files used in the scripts.
 
 ### Important
-The code uses a modified version of the R library spGARCH which can be installed by using the provided tarball.
+The code uses a modified version of the R library spGARCH which can be installed by using the provided tarball. It can be downloaded under releases i the right sidebar.
 
 ### Authors
 Morales-Martínez, R., Nordhausen, K. and Ruiz-Gazen, A.
