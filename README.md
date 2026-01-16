@@ -16,5 +16,6 @@ Morales-Martínez, R., Nordhausen, K. and Ruiz-Gazen, A.
 ### License
 GNU GPLv3
 ### References
-Otto, P., Schmid, W. & Garthoff, R. (2018). Generalised spatial and spatiotemporal autoregressive conditional heteroscedasticity. Spatial Statistics, 26, 125–145.
+Otto, P., Schmid, W. & Garthoff, R. (2018). Generalised spatial and spatiotemporal autoregressive conditional heteroscedasticity. Spatial Statistics, 26, 125–145. 
+
 Muehlmann C, Sipila M, Cappello C, De Iaco S, Nordhausen K, Taskinen S, Virta J (2025). SpatialBSS: Blind Source Separation for Multivariate Spatial Data.
