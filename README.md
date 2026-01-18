@@ -1,5 +1,5 @@
 # Spatial Independent Component Analysis for Heteroskedastic random fields
-This project contains the code to reproduce the results from the paper "Spatial independent component analysis for heteroskedastic random fields" by Morales-Martínez, R., Nordhausen, K. and M. Ruiz, A.
+This project contains the code to reproduce the results from the paper "Spatial independent component analysis for heteroskedastic random fields" by Morales-Martínez, R., Nordhausen, K. and Ruiz, A. M.
 
 The goal of the simulations was to show how the novel methods introduced in the paper, spFOBI and spJADE, outperform the current models for independent component analysis in a spatial setting.
 
@@ -12,7 +12,7 @@ All the code was written in R and requires the packages found in requirements.tx
 The code uses a modified version of the R library spGARCH which can be installed by using the provided tarball. It can be downloaded under releases in the right sidebar.
 
 ### Authors
-Morales-Martínez, R., Nordhausen, K. and M. Ruiz, A.
+Morales-Martínez, R., Nordhausen, K. and Ruiz, A. M.
 ### License
 GNU GPLv3
 ### References
