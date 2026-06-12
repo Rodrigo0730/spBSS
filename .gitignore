@@ -1,13 +1,24 @@
-.RData
-.RData*
-.Rhistory
-spBSS.Rproj
+# Directories to ignore
 data/
-/data
-./data
-.Rproj.user
-spBSS.Rproj
 results/
-/results
-./results
-Rplot.pdf
+results-final/raw/
+results_original/
+
+# Ignore all R data files globally
+*.rds
+*.rda
+*.RData
+.RData*
+
+# Ignore generated plots and reports
+*.pdf
+
+# RStudio and environment hidden files
+.Rhistory
+.Ruserdata
+.Rproj.user/
+.positai
+
+# Scripts not needed
+scripts/analysis_review.R
+

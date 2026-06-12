@@ -1,4 +1,3 @@
-
 # -----------------------------------------------------------------------------
 # Spatial BSS MPI Data Analysis Framework
 # -----------------------------------------------------------------------------
@@ -8,7 +7,7 @@
 #
 # SETTING="setting_1/2/3/4"
 # DS_VALUES="40,80,120"
-#
+# ensure all matrices are bounded. This natively corrects edge effects and forces the optimizer to equally weight th
 # Then add to the srun of this R script the following:
 #
 # --setting=${SETTING} --ds=${DS_VALUES}
@@ -31,9 +30,39 @@ parse_arg <- function(name, default = NULL) {
   sub(paste0("^--", name, "="), "", val)
 }
 
-setting <- parse_arg("setting", default = "irregular_1")
+setting <- parse_arg("setting", default = "setting_3")
 ds_input <- parse_arg("ds", default = "5")
 ds <- as.integer(strsplit(ds_input, ",")[[1]])
+ds <- c(10, 20, 40)
+
+clear_raw_results <- function(settings = 1:4) {
+  cat("\n--- Commencing Pre-Run Cleanup ---\n")
+  
+  for (s in settings) {
+    # Define the directory path
+    #dir_path <- sprintf("results/raw/setting_%d", s)
+    dir_path <- sprintf("results/raw/setting_%d", s)
+    
+    if (dir.exists(dir_path)) {
+      files_to_delete <- list.files(path = dir_path, pattern = "\\.rds$", full.names = TRUE)
+      
+      if (length(files_to_delete) > 0) {
+        file.remove(files_to_delete)
+        cat(sprintf("Cleared %d obsolete files from %s\n", length(files_to_delete), dir_path))
+      } else {
+        cat(sprintf("Directory %s is already clean.\n", dir_path))
+      }
+    } else {
+      dir.create(dir_path, recursive = TRUE)
+      cat(sprintf("Created new directory: %s\n", dir_path))
+    }
+  }
+  cat("--- Cleanup Complete. Ready for new simulation. ---\n\n")
+}
+
+
+#clear results form previous run?
+clear_raw_results(settings = 3)
 
 message("Setting: ", setting)
 message("Values of parameter d: ", paste(ds, collapse = ", "))
@@ -52,20 +81,19 @@ for (pkg in master) {
 
 #inherit functions from analysis.R
 #source("/scratch/project_2012081/spBSS/R/analysis.R")
-source("~/Desktop/Research/spBSS/R/analysis.R")
+source("~/spBSS/R/analysis.R")
 
 
 
 message("[", Sys.time(), "] Starting MPI cluster...")
 
-cl <- makeCluster(6)
+cl <- makeCluster(8)
 registerDoParallel(cl)
 registerDoRNG(seed=123)
 
 message("[", Sys.time(), "] Cluster started and RNG registered.")
 
 n_reps <- 2000
-ds <- c(5, 10, 20, 40, 60, 80)
 
 for (d in ds) {
   
@@ -77,35 +105,48 @@ for (d in ds) {
   # filename <- sprintf("/scratch/project_2012081/spBSS/data/%s/data_%d.rds", setting, d)
   
   # locally
-  filename <- sprintf("~/Desktop/Research/spBSS/data/%s/data_%d.rds", setting, d)
+  filename <- sprintf("~/spBSS/data/%s/data_%d.rds", setting, d)
   
   data <- readRDS(filename)
-  
   field <- gen_field(d)
-  # 
-  # field <- data$coords
-  # data <- data$data
-
+  
+  #baseline
   bd <- c(0, 1, 1, 2, 2, 3)
-  rings <- gen_rings(field, bd)
-  kernels_sparse <- rings$kernels_sparse
-  kernels <- rings$kernels
+  
+  rings_all <- gen_rings(field, bd, row_standardize = FALSE, symmetrize = TRUE, f0 = TRUE)
+  
+  kernels_sparse_f0 <- rings_all$kernels_sparse
+  kernels_f0 <- rings_all$kernels
+  
+  kernels_sparse <- kernels_sparse_f0[-1]
+  kernels <- kernels_f0[-1]
   
   message("[", Sys.time(), "] Starting dorng...")
   
   df <- foreach(r = 1:n_reps, .combine = rbind, .packages = workers) %dopar% {
     sources <- data[[r]]
+    p <- ncol(sources)
     
-    spFOBI_md <- spFOBI(field, sources, kernels_sparse)$md
-    spJADE_md <- spJADE(field, sources, kernels, kernels_sparse)$md
+    A <- matrix(rnorm(p*p), p, p)
+    X <- tcrossprod(sources, A)
     
-    res <- lcovbss_fobi_jade(sources, kernels)
+    spFOBI_md <- spFOBI(field, X, A, kernels_sparse)$md
+    spJADE_md <- spJADE(field, X, A, kernels, kernels_sparse)$md
+    
+    spFOBI_md_f0 <- spFOBI(field, X, A, kernels_sparse_f0)$md
+    spJADE_md_f0 <- spJADE(field, X, A, kernels_f0, kernels_sparse_f0)$md
+    
+    res <- lcovbss_fobi_jade(X, A, kernels) 
+    
+    #compile Results
     data.frame(
-      spFOBI = spFOBI_md,
-      spJADE = spJADE_md,
-      SBSS = res$md_sbss,
-      FOBI = res$md_fobi,
-      JADE = res$md_jade,
+      spFOBI    = spFOBI_md,
+      spJADE    = spJADE_md,
+      spFOBI_f0 = spFOBI_md_f0,
+      spJADE_f0 = spJADE_md_f0,
+      SBSS      = res$md_sbss,
+      FOBI      = res$md_fobi,
+      JADE      = res$md_jade,
       stringsAsFactors = FALSE
     )
   }
@@ -114,14 +155,13 @@ for (d in ds) {
   
   message("[", Sys.time(), "] Saving results to /results/raw...")
   
-  output_file <- sprintf("~/Desktop/Research/spBSS/results/raw/%s/res_%d.rds", setting, d)
+  output_file <- sprintf("~/spBSS/results_wo_RO/raw/%s/res_%d.rds", setting, d)
   saveRDS(do.call(rbind, all_res), output_file)
   
   message("[", Sys.time(), "] Saved results.")
-  
   message("[", Sys.time(), "] Finished d = ", d)
   
-  rm(df, all_res)
+  rm(df, all_res, rings_all, kernels, kernels_sparse, kernels_f0, kernels_sparse_f0)
   gc()
 }
 

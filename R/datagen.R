@@ -1,5 +1,3 @@
-
-
 # -------------------------------------------------------------------------
 # Helper functions for data generation MPI framework
 #
@@ -31,24 +29,38 @@ gen_field <- function(d) {
   return(coords)
 }
 
-gen_rings <- function(field, bandwidths) {
+gen_rings <- function(field, bandwidths, row_standardize = FALSE, symmetrize = TRUE, f0 = FALSE) {
   
   # Generates a series of ring-shaped spatial kernel matrices (both dense and 
-  # sparse formats) for a given field and a set of bandwidths. The function 
-  # computes ring kernels using spatial_kernel_matrix, converts them to sparse 
-  # dgCMatrix format, and appends an identity matrix to represent the kernel f0  
-  # (no spatial information). Returns a list containing both the sparse 
-  # and dense versions of the kernels.
+  # sparse formats) for a given field and a set of bandwidths. 
+  # Includes toggles for row-standardization, symmetrization, and appending 
+  # an identity matrix to represent the kernel f0 (no spatial information).
   
   n <- nrow(field)
   kernels <- spatial_kernel_matrix(field, "ring", bandwidths)
-  kernels_sparse <- lapply(kernels, function(W) {
-    W_sp <- as(W, "dgCMatrix")
-    W_sp
+  
+  kernels <- lapply(kernels, function(W) {
+    if (row_standardize) {
+      rs <- rowSums(W)
+      rs[rs == 0] <- 1 
+      W <- sweep(W, 1, rs, "/") 
+    }
+    
+    if (symmetrize) {
+      W <- (W + t(W)) / 2
+    }
+    
+    return(W)
   })
-  kernels <- c(list(diag(1, n, n)), kernels)
-  kernels_sparse <- c(list(Diagonal(n, x=1)), kernels_sparse)
-  return(list(kernels_sparse=kernels_sparse, kernels=kernels))
+  
+  kernels_sparse <- lapply(kernels, function(W) { as(W, "dgCMatrix") })
+  
+  if (f0) {
+    kernels <- c(list(diag(1, n, n)), kernels)
+    kernels_sparse <- c(list(Matrix::Diagonal(n, x = 1)), kernels_sparse)
+  }
+  
+  return(list(kernels_sparse = kernels_sparse, kernels = kernels))
 }
 
 gen_nb <- function(d, type = c("rook","queen")) {
@@ -57,7 +69,8 @@ gen_nb <- function(d, type = c("rook","queen")) {
   # neighborhood definition ("rook" or "queen").
   
   type <- match.arg(type)
-  nb <- cell2nb(nrow = d, ncol = d, type = type, torus = FALSE)
+  nb <- cell2nb(nrow = d, ncol = d, type = type, torus = TRUE)
+  
   return(nb)
 }
 

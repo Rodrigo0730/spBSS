@@ -1,4 +1,3 @@
-
 # -----------------------------------------------------------------------------
 # Spatial BSS MPI Data Generation Framework
 # -----------------------------------------------------------------------------
@@ -52,12 +51,12 @@ for (pkg in master) {
 }
 
 #load helper functions
-source("~/Desktop/Research/spBSS/R/datagen.R")
+source("~/spBSS/R/datagen.R")
 
 message("[", Sys.time(), "] Starting MPI cluster…")
 
 #start MPI cluster
-cl <- makeCluster(6)
+cl <- makeCluster(8)
 registerDoParallel(cl)
 
 registerDoRNG(seed=123)
@@ -97,7 +96,7 @@ for (d in ds) {
 
   message("[", Sys.time(), "] Saving results to data_", d, ".rds …")
   
-  save_filename <- sprintf("~/Desktop/Research/spBSS/data/%s/data_%d.rds", setting, d)
+  save_filename <- sprintf("~/spBSS/data/%s/data_%d.rds", setting, d)
   
   saveRDS(results_d, file = save_filename, compress = "gzip")
   
